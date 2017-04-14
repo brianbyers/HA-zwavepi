@@ -1,0 +1,13 @@
+{
+  "name": "HA-zwavepi",
+  "private": true,
+  "dependencies": {
+    "async": "^2.0.0",
+    "jackrabbit": "^4.3.0",
+    "lodash": "^4.14.2",
+    "mqtt": "^1.13.0",
+    "openzwave-shared": "^1.2.0",
+    "redis": "^2.6.2",
+    "winston": "^2.2.0"
+  }
+}
