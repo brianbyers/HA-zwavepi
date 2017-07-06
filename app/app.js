@@ -2,13 +2,19 @@
 
 const OZW = require('openzwave-shared')
 const zwave = new OZW({
-    Logging: true,     // disable file logging (OZWLog.txt)
-    ConsoleOutput: true // enable console logging
+    Logging: false,     // disable file logging (OZWLog.txt)
+    ConsoleOutput: false // enable console logging
 });
 
 const async = require('async')
 const _ = require('lodash')
 const winston = require('winston')
+
+const express = require('express')
+const basicAuth = require('express-basic-auth')
+const app = express()
+const bodyParser = require('body-parser')
+app.use(bodyParser.json())
 
 winston.add(winston.transports.File, { filename: '/home/pi/zwave.log' });
 winston.remove(winston.transports.Console);
@@ -55,54 +61,15 @@ mqttClient.on('message', function (topic, message) {
   }
 });
 
-const doorSensors = [
-  {
-    nodeId: 7,
-    name: 'frontDoor'
-  }
-]
+const doorSensors = require('./door_sensors')
+const motionSensors = require('./motion_sensors')
+const outlets = require('./outlets')
+const lights = require('./lights')
+const multiSensors = require('./multi_sensors')
 
-const motionSensors = [
-  {
-    nodeId: 8,
-    name: 'multiSensor'
-  }
-]
 
-const outlets = [
-  {
-    nodeId: 2,
-    commandclass: 37,
-    name: 'landingOutlet'
-  },
-  {
-    nodeId: 4,
-    commandclass: 37,
-    name: 'outsideSwitch'
-  }
-]
 
-const lights = [
-  {
-    nodeId: 5,
-    commandclass: 37,
-    name: 'garageMainLights'
-  },
-  {
-    nodeId: 3,
-    commandclass: 38,
-    name: 'livingRoomLight',
-    currentValue: null
-  }
-]
 
-const multiSensors = [
-  {
-    nodeId: 8,
-    keys: ['Temperature', 'Luminance', 'Relative Humidity', 'Ultraviolet', 'Low Battery', 'Battery Level', 'Burglar'],
-    name: 'multiSensor'
-  }
-]
 
 function handleOutletAction(message) {
   message = JSON.parse(message.toString())
@@ -482,3 +449,76 @@ process.on('SIGINT', function() {
   zwave.disconnect();
   process.exit();
 });
+
+
+app.use(basicAuth({
+  users: {'admin': 'mysecret'}
+}))
+
+app.get('/lights', (req, res) => {
+  let lightz = _.map(lights, (light) => { return light.name })
+  res.json(lightz)
+})
+
+app.post('/lights/:name', (req, res) => {
+  console.log(req.body, req.params)
+  let name = req.params.name
+  let state = req.body.state
+  let level = req.body.level
+
+  let light = _.find(lights, (o) => {
+    return o.name === name;
+  });
+
+  if (light) {
+    if (state === 'on') {
+      if (level !== undefined) {
+        winston.log('info', light.nodeId, light.commandclass, 1, 0, level);
+        // winston.log('info', level);
+        zwave.setValue(light.nodeId, light.commandclass, 1, 0, level);
+      } else {
+        zwave.setValue(light.nodeId, light.commandclass, 1, 0, true);
+      }    
+    } else {
+      winston.log('info', 'turning light off', light.nodeId)
+      zwave.setValue(light.nodeId, light.commandclass, 1, 0, false);
+    }
+    res.send('ok');
+  } else {
+    res.send('could not find light switch');
+  }
+});
+
+
+app.get('/outlets', (req, res) => {
+  let outletz = _.map(outlets, (outlet) => { return outlet.name })
+  res.json(outletz)
+})
+
+app.post('/outlets/:name', (req, res) => {
+  console.log(req.body, req.params)
+  let name = req.params.name
+  let state = req.body.state
+
+  let outlet = _.find(outlets, (o) => {
+    return o.name === name;
+  });
+
+  if (outlet) {
+    if (state === 'on') {
+      winston.log('info', 'turning outlet on', outlet.nodeId)
+      zwave.setValue(outlet.nodeId, outlet.commandclass, 1, 0, true);
+    } else {
+      winston.log('info', 'turning outlet off', outlet.nodeId)
+      zwave.setValue(outlet.nodeId, outlet.commandclass, 1, 0, false);
+    }
+    res.send('ok')
+  } else {
+    res.send('could not find outlet')
+  }
+});
+
+
+app.listen(3000, function () {
+  console.log('App up and running 3000!')
+})
